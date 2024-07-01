@@ -1,0 +1,93 @@
+# Import ArcPy, sys, and Tkinter
+import arcpy, sys
+import tkinter as tk
+# Import messagebox module from Tkinter
+from tkinter import messagebox
+# GDB filepath
+gdb_path = r"C:\Geog_531\Lab6_Data\Lab6_Data\ARCH_POTENTIAL\ARCH_POTENTIAL.gdb"
+
+#### Tool Parameters ####
+dem = arcpy.GetParameterAsText(0)
+streams_elevation = arcpy.GetParameterAsText(1)
+###########################
+
+# Set environment workspace, overwrite, cell size, and extent
+arcpy.env.workspace = gdb_path
+arcpy.env.overwriteOutput = True
+arcpy.env.cellSize = dem
+arcpy.env.extent = dem
+
+#### Check License ####
+# Check Spatial Analyst License. Add message, and exit if not available.
+if arcpy.CheckExtension("Spatial") == "Available":
+    arcpy.AddMessage("Spatial Analyst license is available")
+else:
+    arcpy.AddMessage("Spatial Analyst license is not available. Exiting program.")
+    sys.exit(1)
+##########################    
+    
+
+#### DEM Analysis ####   
+# Set Neighbourhood dimensions
+neighbourhood = arcpy.sa.NbrRectangle(5, 5, "CELL")
+# Conduct neighbourhood analysis
+FocalSt_dem = arcpy.sa.FocalStatistics(dem, neighbourhood)
+# Save the raster to the gdb
+FocalSt_dem.save("FocalSt_dem")
+
+# Create difference raster
+Difference = dem - FocalSt_dem
+# Save the raster to the gdb
+Difference.save("Difference")
+
+# Create reclassify range
+remap_range = arcpy.sa.RemapRange([[-5.959991, 2, 0], [2, 7.959991, 1]])
+# Reclassify difference raster
+Prominences = arcpy.sa.Reclassify(Difference, "VALUE", remap_range)
+# Save Prominences to gdb
+Prominences.save("Prominences")
+###########################
+
+
+
+#### STREAMS Analysis ####
+# Execute Euclidean Distance
+# Using  30m cell raster as environement reference, default cell size for Euclidean Distance will be this size
+DistRaster = arcpy.sa.EucDistance(streams_elevation)
+# Save the distance raster
+DistRaster.save("DistRaster")
+
+# Reclassify range
+stream_remap_range = arcpy.sa.RemapRange([[0, 500, 1], [500, 804.984497, 0]])
+# Reclassify distance raster
+NearWater = arcpy.sa.Reclassify(DistRaster, "VALUE", stream_remap_range)
+# Save reclassified raster
+NearWater.save("NearWater")
+###########################
+
+#### POTENTIAL Analysis ####
+# Multiply Prominences by NearWater for overlapping areas of interest
+CAPotential = Prominences * NearWater
+# Save CAPotential raster
+CAPotential.save("CAPotential")
+###########################
+
+
+#### POP UP Data ####
+# Create variable to count cells with value 1
+ca_cells = 0
+# Iterate through raster to count cells with value 1
+for r, c in CAPotential:
+    if CAPotential[r, c] == 1:
+        ca_cells += 1
+print(ca_cells)
+# 30x30 = meters squared with value 1 in raster
+cell_dim = 30 * 30
+# Calculate area in hectares
+area = (cell_dim * ca_cells) / 10000
+
+# Create message box popup
+root = tk.Tk()
+root.withdraw()
+messagebox.showinfo("Archaeological Potential", "Number of cells for potential sites: " + str(ca_cells) + ". " + "Area of potential sites: " + str(area) + "ha.")
+###########################

@@ -1,0 +1,40 @@
+import arcpy
+
+# Script arguments
+Clearings = arcpy.GetParameterAsText(0)
+Output_Table = arcpy.GetParameterAsText(1)
+layers_string = arcpy.GetParameterAsText(2)
+input_list = layers_string.split(";")
+buff_size = arcpy.GetParameterAsText(3)
+
+
+
+# Allow us to use the same output name several times, particularly for intermediate results (e.g, buffer)
+arcpy.env.overwriteOutput = True
+
+# Process: Buffer
+Buffered_Clearings = arcpy.Buffer_analysis(Clearings, "Buffered_Clearings", buff_size, "FULL", "ROUND", "ALL", "")
+
+# Iterate through input layers list
+for infc in input_list:
+    arcpy.AddMessage("Processing: " + infc)
+    tab_name = Output_Table + "_" + infc
+    
+    # Set up a list for the feature classes to be intersected
+    InputFCs = [Buffered_Clearings, infc]
+    arcpy.AddMessage(" Intersect...")
+    
+    # Process: Intersect
+    Impacted_OGMA = arcpy.Intersect_analysis(InputFCs, "Impacted_OGMA", "ALL", "", "INPUT")
+    arcpy.AddMessage(" Summarize...")
+    
+    # Process: Summary Statistics in a variable
+    sum_stats = arcpy.Statistics_analysis(Impacted_OGMA, tab_name, "Shape_Area SUM", "#")
+
+    # Use update cursor to iterate through summary statistics
+    upd = arcpy.UpdateCursor(sum_stats)
+    for row in upd:
+        # Buffer intersection area
+        arcpy.AddMessage("Area:\t" + str((row.SUM_SHAPE_area)/10000) + " ha")
+        # Buffer intersection frequency
+        arcpy.AddMessage("Intersects " + str(row.FREQUENCY) + " times")
